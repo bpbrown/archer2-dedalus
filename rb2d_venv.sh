@@ -13,9 +13,6 @@
 #SBATCH --partition=standard
 #SBATCH --qos=standard
 
-# Setup the batch environment
-module load epcc-job-env
-
 # Activate Python & the Dedalus virtual environment
 module load cray-python
 export WORK=${HOME/home/work}

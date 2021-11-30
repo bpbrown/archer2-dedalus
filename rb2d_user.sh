@@ -13,9 +13,6 @@
 #SBATCH --partition=standard
 #SBATCH --qos=standard
 
-# Setup the batch environment
-module load epcc-job-env
-
 # Activate Python and tell it where to find local packages
 module load cray-python
 export WORK=${HOME/home/work}

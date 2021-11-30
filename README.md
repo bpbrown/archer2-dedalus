@@ -5,8 +5,9 @@ Some initial recipes for installing
 on the new
 [ARCHER2](https://www.archer2.ac.uk/) National UK Supercomputing Service.
 
-These instructions were developed for the initial 4-cabinet ARCHER2 system
-and will probably need to evolve a bit over time.
+This version of these instructions is for the full ARCHER2 system,
+as rolled out in November 2021. These instructions may need to evolve a wee
+bit more.
 
 ## Current recipes
 
@@ -42,7 +43,6 @@ you to keep your Dedalus-related Python stuff in one place, separate from your
 other Python work.
 
 ```bash
-module restore PrgEnv-cray  # Restore modules to defaults
 module load cray-python  # Load Python module
 
 # Create virtual environment in my /work/... directory
@@ -84,8 +84,9 @@ sed -i -e "/^libraries = \[/s/]/, 'mpi']/" setup.py
 
 # Build Dedalus extension libraries
 module load cray-fftw
-export FFTW_PATH=$CRAY_FFTW_PREFIX
-export MPI_PATH=$CRAY_MPICH_BASEDIR/cray/$PE_MPICH_GENCOMPILERS_CRAY
+export FFTW_INCLUDE_PATH=$FFTW_INC
+export FFTW_LIBRARY_PATH=$FFTW_DIR
+export MPI_PATH=$CRAY_MPICH_DIR
 CC=cc pip install .
 module unload cray-fftw
 ```
@@ -103,7 +104,7 @@ export PYTHONUSERBASE=$WORK/.local  # Recommended in ARCHER2 docs for user-level
 
 # We'll use the GNU compilers here, as ARCHER2's existing mpi4py
 # package was compiled with GCC.
-module restore PrgEnv-gnu
+module swap PrgEnv-cray PrgEnv-gnu
 
 # Activate Python
 module load cray-python
@@ -111,7 +112,7 @@ module load cray-python
 # Build & install h5py, linked to Cray HDF5 libraries.
 # (We need to help GCC find mpi.h, hence the CFLAGS="..." stuff.)
 module load cray-hdf5-parallel
-CFLAGS="-I$CRAY_MPICH_BASEDIR/gnu/$PE_MPICH_GENCOMPILERS_GNU/include" pip install --user --no-binary=h5py h5py
+CFLAGS="-I$CRAY_MPICH_DIR/include" pip install --user --no-binary=h5py h5py
 module unload cray-hdf5-parallel
 
 # Create a temporary directory for building Dedalus.
@@ -136,14 +137,15 @@ sed -i -e "/^libraries = \[/s/]/, 'mpi']/" setup.py
 
 # Build Dedalus extension libraries
 module load cray-fftw
-export FFTW_PATH=$CRAY_FFTW_PREFIX
-export MPI_PATH=$CRAY_MPICH_BASEDIR/gnu/$PE_MPICH_GENCOMPILERS_GNU
+export FFTW_INCLUDE_PATH=$FFTW_INC
+export FFTW_LIBRARY_PATH=$FFTW_DIR
+export MPI_PATH=$CRAY_MPICH_DIR
 python setup.py install --user  # FIXME: This works fine, but running setup.py is no longer considered best practice
 #pip install --user .  # FIXME: This alternative does not work - it tries to install mpi4py from scratch
 module unload cray-fftw
 
 # (For tidiness, let's revert back to default Cray compilers)
-module restore PrgEnv-cray
+module swap PrgEnv-gnu PrgEnv-cray
 ```
 
 After a successful installation, you might now want to delete your
@@ -168,7 +170,7 @@ After a successful installation, you might now want to delete your
   method - this was giving a runtime blow-up at one of Dedalus' internal imports:
   ```bash
   python -c 'import dedalus.libraries.fftw'
-  ImportError: /opt/cray/pe/fftw/3.3.8.8/x86_rome/lib/libfftw3_mpi.so.mpi31.3: undefined symbol: MPI_Alltoallv
+  ImportError: /opt/cray/pe/fftw/3.3.8.9/x86_rome/lib/libfftw3_mpi.so.mpi31.3: undefined symbol: MPI_Alltoallv
   ```
   These `MPI_*` symbols are provided by the MPI libraries but left
   unresolved in the FFTW3 libraries, and something here is really not liking
