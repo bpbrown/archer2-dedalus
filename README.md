@@ -5,158 +5,159 @@ Some initial recipes for installing
 on the new
 [ARCHER2](https://www.archer2.ac.uk/) National UK Supercomputing Service.
 
-This version of these instructions is for the full ARCHER2 system,
-as rolled out in November 2021. These instructions may need to evolve a wee
-bit more.
+This version of the build instructions comes out of performance testing Jan 2022 by Ben Brown and Keaton Burns.
 
 ## Current recipes
 
 These instructions currently provide the following recipes:
 
-* Recipe 1: Create a Dedalus Python virtual environment
-* Recipe 2: Install Dedalus as a user-level Python package
+* Recipe 1: Create a Dedalus Python virtual environment, building all packages yourself
 
-I'd personally recommend using Recipe 1 over Recipe 2.
+* Recipe 2: Create a Dedalus Python virtual environment, using system packages where possible
 
-Note that ARCHER2 doesn't currently provide Anaconda, so we can't install
-Dedalus using conda.
+In testing, we have currently found `Recipe 1` to be much faster than `Recipe 2`.
+
 
 ## Which version of Dedalus to install?
 
 These instructions show you how to install:
 
-* The current release version (v2.2006) of Dedalus
 * The current Dedalus source code snapshot from its Git repository
 
-**NOTE:** I've found that I mostly had to use the latest snapshot of Dedalus
-rather than the last production release, as that was giving me
-`Objects are not all equal`
-errors at the end of the run. This seems to be a known issue.
-
-In particular, the `rayleigh_benard_2d.py` example code only works correctly
-with the current Git snapshot.
-
-## Recipe 1: Create a Dedalus Python virtual environment
+## Recipe 1: Create a Dedalus Python virtual environment, building all packages yourself
 
 This creates a Python virtual environment specifically for Dedalus. This allows
 you to keep your Dedalus-related Python stuff in one place, separate from your
 other Python work.
 
-```bash
-module load cray-python  # Load Python module
+Start by setting up this `.bash_profile` in your home directory:
 
-# Create virtual environment in my /work/... directory
-export WORK=${HOME/home/work}  # (This converts my home dir to corresponding work dir: /work/[proj]/[proj]/[username])
-mkdir -p $WORK/venvs
+```bash
+module load cray-python
+module load cray-hdf5-parallel
+module load cray-fftw
+
+export MPICC=cc
+export CC=cc
+
+export FFTW_INCLUDE_PATH=$FFTW_INC
+export FFTW_LIBRARY_PATH=$FFTW_DIR
+export MPI_PATH=$CRAY_MPICH_DIR
+
+export OMP_NUM_THREADS=1
+export NUMEXPR_MAX_THREADS=1
+
+# needed when building with --system-site-packages
+export SETUPTOOLS_USE_DISTUTILS=stdlib
+
+export PATH=~/scripts:$PATH
+
+export WORK=${HOME/home/work}
+
+export MPLCONFIGDIR=$WORK/matplotlib
+
+alias dedalus-d2="source $WORK/venvs/dedalus/bin/activate"
+```
+
+Either close your shell and log back in, or `source ~/.bash_profile` to make sure you have the right modules and evironment settings.
+
+Then begin the dedalus install.
+
+```bash
+mkdir $WORK/venvs
+mkdir $WORK/dedalus-build
+
 python -m venv $WORK/venvs/dedalus
 
-# Activate virtual environment
-source $WORK/venvs/dedalus/bin/activate
-pip install -U pip  # Upgrade pip to latest version
+dedalus % activate dedalus virtual env
+pip install -U pip
+pip install -U setuptools
+pip install --no-binary=h5py h5py
 
-# Build & install h5py, linked to Cray HDF5 libraries, compiled using Cray compiler (CC=cc)
-module load cray-hdf5-parallel
-CC=cc pip install --no-binary=h5py h5py
-module unload cray-hdf5-parallel
-
-# Build and install mpi4py, again compiling from source rather than using a binary
-MPICC=cc pip install --no-binary=mpi4py mpi4py
-
-# Create a temporary directory for building Dedalus.
-# For example:
-cd $WORK
-mkdir -p dedalus-build
-cd dedalus-build
-
-# Now do ONE of the following:
-#
-# (1) Download the latest source code snapshot from Git
-git clone https://github.com/DedalusProject/dedalus
+cd $WORK/dedalus-build
+git clone https://github.com/DedalusProject/dedalus.git dedalus
 cd dedalus
 
-# OR (2) Download and extract the latest (v2.2006) Dedalus source tarball:
-wget https://github.com/DedalusProject/dedalus/archive/v2.2006.tar.gz
-tar xf v2.2006.tar.gz
-cd dedalus-2.2006
-
-# Patch Dedalus' setup.py to add explicit MPI library dependency
 sed -i -e "/^libraries = \[/s/]/, 'mpi']/" setup.py
 
-# Build Dedalus extension libraries
-module load cray-fftw
-export FFTW_INCLUDE_PATH=$FFTW_INC
-export FFTW_LIBRARY_PATH=$FFTW_DIR
-export MPI_PATH=$CRAY_MPICH_DIR
-CC=cc pip install .
-module unload cray-fftw
+cd ..
+
+pip install -e dedalus
 ```
 
-After a successful installation, you might now want to delete your
-`dedalus-build` directory.
+Your `dedalus-build` directory has been installed with "editable" attributes, and if you update the repo in that directory it should immediately update your pip installed version of dedalus.  The only time this takes some care is if dedalus transposes have changed, in which case you need to re-cythonize `transposes.pyx`. 
 
-## Recipe 2: Build & install Dedalus at user level
+## Recipe 2: Create a Dedalus Python virtual environment, using system packages where possible
 
-This recipe installs Dedalus as a user-level Python package.
+This creates a Python virtual environment specifically for Dedalus, built with system packages.  In particular, we're using the Cray-provided numpy and scipy.  these are somewhat older versions (currently numpy is 1.18.2 and scipy is 1.4.1 vs 1.22 and 1.7.3 currently), and this limits us to using `master` and not `d3`.  This virtual env is independent from the virtual env built in Recipe 1, though you do need to module swap and reload cray-python before running if you're in the other bash_profile:
+```
+module swap PrgEnv-cray PrgEnv-gnu
+module load cray-python
+```
+
+Start by setting up this `.bash_profile` in your home directory:
 
 ```bash
-export WORK=${HOME/home/work}  # Converts home dir to corresponding work dir
-export PYTHONUSERBASE=$WORK/.local  # Recommended in ARCHER2 docs for user-level Python package installation
-
-# We'll use the GNU compilers here, as ARCHER2's existing mpi4py
-# package was compiled with GCC.
-module swap PrgEnv-cray PrgEnv-gnu
-
-# Activate Python
+module swap PrgEnv-cray PrgEnv-gnu # for dedalus-system build
 module load cray-python
-
-# Build & install h5py, linked to Cray HDF5 libraries.
-# (We need to help GCC find mpi.h, hence the CFLAGS="..." stuff.)
 module load cray-hdf5-parallel
-CFLAGS="-I$CRAY_MPICH_DIR/include" pip install --user --no-binary=h5py h5py
-module unload cray-hdf5-parallel
-
-# Create a temporary directory for building Dedalus.
-# For example:
-cd $WORK
-mkdir -p dedalus-build
-cd dedalus-build
-
-# Now do ONE of the following:
-#
-# (1) Download the latest source code snapshot from Git
-git clone https://github.com/DedalusProject/dedalus
-cd dedalus
-
-# OR (2) Download and extract the latest (v2.2006) Dedalus source tarball:
-wget https://github.com/DedalusProject/dedalus/archive/v2.2006.tar.gz
-tar xf v2.2006.tar.gz
-cd dedalus-2.2006
-
-# Patch Dedalus' setup.py to add explicit MPI library dependency
-sed -i -e "/^libraries = \[/s/]/, 'mpi']/" setup.py
-
-# Build Dedalus extension libraries
 module load cray-fftw
+
 export FFTW_INCLUDE_PATH=$FFTW_INC
 export FFTW_LIBRARY_PATH=$FFTW_DIR
 export MPI_PATH=$CRAY_MPICH_DIR
-python setup.py install --user  # FIXME: This works fine, but running setup.py is no longer considered best practice
-#pip install --user .  # FIXME: This alternative does not work - it tries to install mpi4py from scratch
-module unload cray-fftw
 
-# (For tidiness, let's revert back to default Cray compilers)
-module swap PrgEnv-gnu PrgEnv-cray
+export OMP_NUM_THREADS=1
+export NUMEXPR_MAX_THREADS=1
+
+# needed when building with --system-site-packages
+export SETUPTOOLS_USE_DISTUTILS=stdlib
+
+export PATH=~/scripts:$PATH
+
+export WORK=${HOME/home/work}
+
+export MPLCONFIGDIR=$WORK/matplotlib
+
+alias dedalus="source $WORK/venvs/dedalus/bin/activate"
+alias dedalus-system="source $WORK/venvs/dedalus-system/bin/activate"
 ```
+Major differences are:
+1. module swapping to `PrgEnv-gnu`
+2. not setting either the `CC` or `MPICC` env variables.  This makes sure we hit `gcc` rather than `cc`.
 
-After a successful installation, you might now want to delete your
-`dedalus-build` directory.
+Either close your shell and log back in, or `source ~/.bash_profile` to make sure you have the right modules and evironment settings (make sure you `unset CC` and `unset MPICC` if you do so).
+
+Then begin the dedalus install.
+
+```bash
+mkdir $WORK/venvs
+mkdir $WORK/dedalus-build
+
+python -m venv $WORK/venvs/dedalus-system --system-site-packages
+
+dedalus-system % activate dedalus virtual env
+pip install -U pip
+pip install -U setuptools
+
+% wrap h5py build with correct include path to mpi.h
+CFLAGS="-I$CRAY_MPICH_DIR/include" pip install --no-binary=h5py h5py
+
+cd $WORK/dedalus-build
+git clone https://github.com/DedalusProject/dedalus.git dedalus-system
+cd dedalus-system
+
+sed -i -e "/^libraries = \[/s/]/, 'mpi']/" setup.py
+
+cd ..
+
+pip install -e dedalus-system
+```
 
 ## Key technical points about these recipes
 
-* I chose to use the Cray compiler for Recipe 1. (I also tried the GCC
-  compilers but haven't been able to get this to work yet.)
-* However, I had to use the GCC compilers for Recipe 2 in order to match the
-  `mpi4py` Python package provided on ARCHER2 was compiled with GCC, as we can
+* Recipe 1 uses Cray compilers, while Recipe 2 uses GCC compilers to match the
+  `mpi4py` Python package provided on ARCHER2. The system package was compiled with GCC, as we can
   confirm from:
   ```bash
   ldd $CRAY_PYTHON_PREFIX/lib/python3.8/site-packages/mpi4py/MPI.cpython-38-x86_64-linux-gnu.so
@@ -164,26 +165,10 @@ After a successful installation, you might now want to delete your
   libmpi_gnu_91.so.12 => /opt/cray/pe/lib64/libmpi_gnu_91.so.12 (0x00002b0f332e4000)
   ...
   ```
-  I found that I needed to use the same MPI libraries for Dedalus, otherwise
-  we'd get a blow-up at runtime.
-* I wasn't able to get a working Dedalus using the standard `pip install dedalus`
-  method - this was giving a runtime blow-up at one of Dedalus' internal imports:
-  ```bash
-  python -c 'import dedalus.libraries.fftw'
-  ImportError: /opt/cray/pe/fftw/3.3.8.9/x86_rome/lib/libfftw3_mpi.so.mpi31.3: undefined symbol: MPI_Alltoallv
-  ```
-  These `MPI_*` symbols are provided by the MPI libraries but left
-  unresolved in the FFTW3 libraries, and something here is really not liking
-  that. Hence those `sed` commands in the recipes, which patch Dedalus' library
-  dependencies to explicitly require MPI.
-* These recipes perform an explicit installation of the Python `h5py` library,
-  explicitly linking to the Cray HDF5 libraries. Doing a standard
-  `pip install ...` builds and installs local HDF5 libraries, which we'd
-  expect to be less performant than Cray's libraries.
-* The `cray-mpich` module is activated by default on ARCHER2, so I've just
-  decided to use that here.
 
 ## Example Dedalus submission scripts for ARCHER2
+
+*this section not yet updated*
 
 Here are some example Slurm submission scripts for both recipes:
 
@@ -199,24 +184,13 @@ account name and possibly some other parameters.
 
 ## Deleting your Dedalus installation
 
-### For Recipe 1
-
 Simply delete your Dedalus virtual environment as follows:
 
 ```bash
 rm -r $WORK/venvs/dedalus
 ```
 
-This is another reason why Recipe 1 is better than Recipe 2!
-
-### For Recipe 2
-
-You can delete your locally-installed Dedalus package with:
-
+or
 ```bash
-pip uninstall dedalus
+rm -r $WORK/venvs/dedalus-system
 ```
-
-However, Dedalus will probably have installed a bunch of additional packages
-and, if you've installed other packages locally, it may not be obvious which
-of these additional packages can now be safely deleted.
