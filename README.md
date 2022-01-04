@@ -69,7 +69,7 @@ mkdir $WORK/dedalus-build
 
 python -m venv $WORK/venvs/dedalus
 
-dedalus % activate dedalus virtual env
+dedalus # activate dedalus virtual env
 pip install -U pip
 pip install -U setuptools
 pip install --no-binary=h5py h5py
@@ -136,11 +136,11 @@ mkdir $WORK/dedalus-build
 
 python -m venv $WORK/venvs/dedalus-system --system-site-packages
 
-dedalus-system % activate dedalus virtual env
+dedalus-system # activate dedalus virtual env
 pip install -U pip
 pip install -U setuptools
 
-% wrap h5py build with correct include path to mpi.h
+# wrap h5py build with correct include path to mpi.h
 CFLAGS="-I$CRAY_MPICH_DIR/include" pip install --no-binary=h5py h5py
 
 cd $WORK/dedalus-build
